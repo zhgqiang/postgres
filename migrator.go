@@ -38,40 +38,29 @@ WHERE
 `
 
 var typeAliasMap = map[string][]string{
-	"int":                         {"integer"},
-	"int2":                        {"smallint"},
-	"int4":                        {"integer"},
-	"int8":                        {"bigint"},
-	"smallint":                    {"int2"},
-	"integer":                     {"int4"},
-	"bigint":                      {"int8"},
-	"date":                        {"date"},
-	"decimal":                     {"numeric"},
-	"numeric":                     {"decimal"},
-	"timestamp":                   {"timestamp"},
-	"timestamptz":                 {"timestamp with time zone"},
-	"timestamp without time zone": {"timestamp"},
-	"timestamp with time zone":    {"timestamptz"},
-	"bool":                        {"boolean"},
-	"boolean":                     {"bool"},
-	"serial2":                     {"smallserial"},
-	"serial4":                     {"serial"},
-	"serial8":                     {"bigserial"},
-	"varbit":                      {"bit varying"},
-	"char":                        {"character"},
-	"varchar":                     {"character varying"},
-	"float4":                      {"real"},
-	"float8":                      {"double precision"},
-	"time":                        {"time"},
-	"timetz":                      {"time with time zone"},
-	"time without time zone":      {"time"},
-	"time with time zone":         {"timetz"},
+	"int":                      {"integer"},
+	"int2":                     {"smallint"},
+	"int4":                     {"integer"},
+	"int8":                     {"bigint"},
+	"smallint":                 {"int2"},
+	"integer":                  {"int4"},
+	"bigint":                   {"int8"},
+	"decimal":                  {"numeric"},
+	"numeric":                  {"decimal"},
+	"timestamptz":              {"timestamp with time zone"},
+	"timestamp with time zone": {"timestamptz"},
+	"bool":                     {"boolean"},
+	"boolean":                  {"bool"},
+	"serial2":                  {"smallserial"},
+	"serial4":                  {"serial"},
+	"serial8":                  {"bigserial"},
+	"varbit":                   {"bit varying"},
+	"char":                     {"character"},
+	"varchar":                  {"character varying"},
+	"float4":                   {"real"},
+	"float8":                   {"double precision"},
+	"timetz":                   {"time with time zone"},
 }
-
-var (
-	autoIncrementValuePattern = regexp.MustCompile(`^nextval\('"?[^']+seq"?'::regclass\)$`)
-	defaultValueValuePattern  = regexp.MustCompile(`^(.*?)(?:::.*)?$`)
-)
 
 type Migrator struct {
 	migrator.Migrator
@@ -141,8 +130,7 @@ func (m Migrator) CreateIndex(value interface{}, name string) error {
 				}
 				createIndexSQL += "INDEX "
 
-				hasConcurrentOption := strings.TrimSpace(strings.ToUpper(idx.Option)) == "CONCURRENTLY"
-				if hasConcurrentOption {
+				if strings.TrimSpace(strings.ToUpper(idx.Option)) == "CONCURRENTLY" {
 					createIndexSQL += "CONCURRENTLY "
 				}
 
@@ -152,10 +140,6 @@ func (m Migrator) CreateIndex(value interface{}, name string) error {
 					createIndexSQL += " USING " + idx.Type + "(?)"
 				} else {
 					createIndexSQL += " ?"
-				}
-
-				if idx.Option != "" && !hasConcurrentOption {
-					createIndexSQL += " " + idx.Option
 				}
 
 				if idx.Where != "" {
@@ -401,15 +385,9 @@ func (m Migrator) AlterColumn(value interface{}, field string) error {
 								return err
 							}
 						} else {
-							if err := m.DB.Exec("ALTER TABLE ? ALTER COLUMN ? DROP DEFAULT", m.CurrentTable(stmt), clause.Column{Name: field.DBName}).Error; err != nil {
+							if err := m.DB.Exec("ALTER TABLE ? ALTER COLUMN ? DROP DEFAULT", m.CurrentTable(stmt), clause.Column{Name: field.DBName}, clause.Expr{SQL: field.DefaultValue}).Error; err != nil {
 								return err
 							}
-						}
-					} else if !field.HasDefaultValue {
-						// case - as-is column has default value and to-be column has no default value
-						// need to drop default
-						if err := m.DB.Exec("ALTER TABLE ? ALTER COLUMN ? DROP DEFAULT", m.CurrentTable(stmt), clause.Column{Name: field.DBName}).Error; err != nil {
-							return err
 						}
 					}
 				}
@@ -506,7 +484,8 @@ func (m Migrator) ColumnTypes(value interface{}) (columnTypes []gorm.ColumnType,
 				column.LengthValue = typeLenValue
 			}
 
-			if autoIncrementValuePattern.MatchString(column.DefaultValueValue.String) || (identityIncrement.Valid && identityIncrement.String != "") {
+			if (strings.HasPrefix(column.DefaultValueValue.String, "nextval('") &&
+				strings.HasSuffix(column.DefaultValueValue.String, "seq'::regclass)")) || (identityIncrement.Valid && identityIncrement.String != "") {
 				column.AutoIncrementValue = sql.NullBool{Bool: true, Valid: true}
 				column.DefaultValueValue = sql.NullString{}
 			}
@@ -820,6 +799,6 @@ func (m Migrator) RenameColumn(dst interface{}, oldName, field string) error {
 }
 
 func parseDefaultValueValue(defaultValue string) string {
-	value := defaultValueValuePattern.ReplaceAllString(defaultValue, "$1")
+	value := regexp.MustCompile(`^(.*?)(?:::.*)?$`).ReplaceAllString(defaultValue, "$1")
 	return strings.Trim(value, "'")
 }
